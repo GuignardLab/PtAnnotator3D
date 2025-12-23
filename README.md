@@ -38,7 +38,7 @@ From top to bottom:
 
 After clicking on the `Add new image (0)` for the first time, if all other settings are chosen correctly, three layers will be added to the viewer :
 
-![](https://github.com/GuignardLab/ptannotator3d/blob/main/docs/widget.png)
+![](https://github.com/GuignardLab/ptannotator3d/blob/main/docs/layers.png)
 
 - `Chunk` is an Image layer corresponding to the chunk of the image that was loaded.
 - `From CSV (X points)` is a Points layer containing all the `X` points already present in the chunk according to the CSV selected in the settings. 
