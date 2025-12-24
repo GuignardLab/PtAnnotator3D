@@ -25,7 +25,7 @@ from qtpy.QtWidgets import (
 from tifffile import imread
 import zarr
 
-VALID_IMAGE_FORMATS = [".tif"]
+VALID_IMAGE_FORMATS = [".tif", ".tiff"]
 
 
 class PtAnnotator3DWidget(QWidget):
@@ -103,6 +103,7 @@ class PtAnnotator3DWidget(QWidget):
         self.img_layer = None
         self.csv_layer = None
         self.points_layer = None
+        self.no_channels = False
 
     @property
     def chunk_shape(self):
@@ -121,7 +122,7 @@ class PtAnnotator3DWidget(QWidget):
         self.data = zarr.open(store, mode="r")
         self.shape = self.data.shape
         if len(self.shape) == 3:
-            self.channel.max = -1
+            self.no_channels = True
             for e, spin in enumerate(self.chunk_spins):
                 spin.max = self.data.shape[e]
         else:
@@ -173,7 +174,7 @@ class PtAnnotator3DWidget(QWidget):
         """
         while True:  # maybe I can make this better than random?? not sure yet
             dx, dz, dy = self.chunk_shape
-            xm, ym, zm = self.shape[1:]
+            xm, ym, zm = self.shape if self.no_channels else self.shape[1:4]
             self.offset = (
                 np.random.randint(xm - dx),
                 np.random.randint(ym - dy),
@@ -187,7 +188,7 @@ class PtAnnotator3DWidget(QWidget):
                 and (y < py < y + dy)
                 and (z < pz < z + dz)
             ]
-            if self.channel.value == -1:
+            if self.no_channels:
                 chunk = np.array(
                     self.data[x : x + dx, y : y + dy, z : z + dz]
                 )

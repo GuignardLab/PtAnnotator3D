@@ -25,7 +25,7 @@ You will see this widget appear on the side of the viewer:
 ![](https://github.com/GuignardLab/ptannotator3d/blob/main/docs/widget.png)
 
 From top to bottom:
-- Select the image file. Selected formats currently only include `.tif`, I have yet to test other formats.
+- Select the image file. Selected formats currently only include TIF/TIFF files, I have yet to test other formats. If your image has time or channels, make sure it's the *first dimension* of your image (TXYZ or CXYZ).
 - Select the CSV file to write to. You can also create a new file. If you just write the name of the file, it will write the file in the path from where napari is running, so be mindful of that.
   - Any CSV file that can be loaded into napari can also be loaded in. Therefore, if you have other algorithms that can detect points, it's then possible to save the points layer in napari as a CSV and open it again in this plugin.
 - Select the channel / timepoint of the image to use. Auto-detects number of channels / timepoints. The plugin can also detect single timepoint + single channel images. 
