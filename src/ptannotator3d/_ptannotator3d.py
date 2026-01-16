@@ -228,7 +228,7 @@ class PtAnnotator3DWidget(QWidget):
         ox, oy, oz = self.offset
         dx, dy, dz = self.offset
         vertices = self.offset+BOX_PATHS*self._chunk_shape
-        return [[idx, "shape", e, vx, vy, vz] for e, (vx, vy, vz) in enumerate(vertices)]
+        return [[idx, "path", e, vx, vy, vz] for e, (vx, vy, vz) in enumerate(vertices)]
 
     def generator(self, channel):
         """Generator of chunks and points. Selects random coordinates.

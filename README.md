@@ -33,6 +33,7 @@ From top to bottom:
 - Select contrast limits for all chunks to be loaded. This controller is synchronised to the image layers' contrast limits slider, but persists along chunks. 
   - You can still change the contrast limits of an individual layer using its layer controls, to fine tune the visuals for that layer, without changing this controller for future chunks. 
 - Select the chunk shape. Each loaded chunk loaded will have this shape. It can of course be changed at any point during use of the plugin.
+- Select the point projection distance. This controls how far away a point has to be from a slice in each axis to be projected on the screen in 2D view.
 - Load a chunk by clicking on `Add new image (0)` or pressing `0` on a NumPad if you have one.
 
 
@@ -40,11 +41,13 @@ After clicking on the `Add new image (0)` for the first time, if all other setti
 
 ![](https://github.com/GuignardLab/ptannotator3d/blob/main/docs/layers.png)
 
-- `Chunk` is an Image layer corresponding to the chunk of the image that was loaded.
+- `Chunk` is an Image layer corresponding to the chunk of the image that was loaded. `Chunk (+1)` and `Chunk (-1)` are cyan and red additively colored offsets of the chunk that help with knowing whether a cell is sliding in or out of the view (currently only supports Z-axis, I'm not sure I'll implement it for the others). 
 - `From CSV (X points)` is a Points layer containing all the `X` points already present in the chunk according to the CSV selected in the settings. 
 - `New Points` is an empty Points layer. It's the one the you should place points in.
 
 Once you're satisfied with the points in the current chunk, commit them to the CSV by loading the next chunk. As the next chunk loads in, replacing these three layers, the points placed in `New Points` will be appended to the CSV, and will be visible in the `From CSV` layer if ever the area where they were placed is loaded again.
+
+A list of wireframe bounding boxes will be stored as a shapes layer to be displayed with the 3D image and the points, so it's possible to know which parts of the image were not segmented and should therefore be ignored for certain validation metrics, for example.
 
 ## Contributing
 
