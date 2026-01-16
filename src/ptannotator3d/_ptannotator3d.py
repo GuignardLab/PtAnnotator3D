@@ -11,6 +11,7 @@ from magicgui.widgets import FileEdit, RangeSlider, SpinBox
 import numpy as np
 import napari
 from napari.utils.notifications import show_warning
+from napari.layers.utils._link_layers import link_layers
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QAbstractSpinBox,
@@ -27,6 +28,25 @@ import zarr
 
 VALID_IMAGE_FORMATS = [".tif", ".tiff"]
 
+BOX_PATHS = np.array([
+    [0,0,0],
+    [1,0,0],
+    [1,1,0],
+    [0,1,0],
+    [0,0,0],
+    [0,0,1],
+    [1,0,1],
+    [1,1,1],
+    [0,1,1],
+    [0,0,1],
+    [0,0,0],
+    [1,0,0],
+    [1,0,1],
+    [1,1,1],
+    [1,1,0],
+    [0,1,0],
+    [0,1,1]
+])
 
 class PtAnnotator3DWidget(QWidget):
     def __init__(self, napari_viewer: napari.viewer.Viewer):
@@ -93,6 +113,27 @@ class PtAnnotator3DWidget(QWidget):
         layout.addLayout(chunk_shape_layout_wrapper)
         layout.addSpacerItem(QSpacerItem(10, 10))
 
+
+        point_proj_layout_wrapper = QVBoxLayout()
+        point_proj_layout_wrapper.addWidget(
+            QLabel("Point Projection"), alignment=Qt.AlignCenter
+        )
+        point_proj_layout_wrapper.setAlignment(Qt.AlignCenter)
+        point_proj_layout = QHBoxLayout()
+        self.proj_spins = [
+            SpinBox(min=0, max=100),
+            SpinBox(min=0, max=100),
+            SpinBox(min=0, max=100),
+        ]
+        for spin in self.proj_spins:
+            point_proj_layout.addWidget(spin.native)
+            spin.native.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            spin.native.setButtonSymbols(QAbstractSpinBox.NoButtons)
+            spin.changed.connect(self._update_point_projections)
+        point_proj_layout_wrapper.addLayout(point_proj_layout)
+        layout.addLayout(point_proj_layout_wrapper)
+        layout.addSpacerItem(QSpacerItem(10, 10))
+
         confirm_button = QPushButton("Add new image (0)")
         confirm_button.clicked.connect(self.confirm)
         layout.addWidget(confirm_button)
@@ -101,18 +142,38 @@ class PtAnnotator3DWidget(QWidget):
 
         self.offset = (0, 0, 0)
         self.img_layer = None
+        self.chunk_after = None
+        self.chunk_before = None
         self.csv_layer = None
         self.points_layer = None
         self.no_channels = False
+        self._chunk_shape = None
+
+    @property
+    def image_layers(self):
+        return [self.img_layer, self.chunk_after, self.chunk_before]
+
+    @property
+    def bboxes_filename(self):
+        return str(self.csvfile.value)[:-4]+"_bboxes.csv"
 
     @property
     def chunk_shape(self):
-        return tuple([spin.value for spin in self.chunk_spins])
+        if self._chunk_shape is None:
+            self._chunk_shape = tuple([spin.value for spin in self.chunk_spins])
+        return self._chunk_shape
+
+    @property
+    def projections(self):
+        return tuple([spin.value for spin in self.proj_spins])
 
     def load_csv(self):
         """Loads the csv points list using the FileEdit dialog box."""
         if str(self.csvfile.value)[-4:] == ".csv":
             self.csv_points = self._load_csv(self.csvfile.value)
+            if not os.path.exists(self.bboxes_filename):
+                with open(self.bboxes_filename, "w") as fp:
+                    fp.write("index,shape-type,vertex-index,axis-0,axis-1,axis-2\n")                
 
     def load_data(self):
         """Loads the data and corresponding metadata using the FileEdit dialogbox."""
@@ -156,6 +217,18 @@ class PtAnnotator3DWidget(QWidget):
         """Connect widget contrast limits to chunk image layer controls."""
         if self.img_layer is not None:
             self.img_layer.contrast_limits = self.contrast_limits.value
+            self.chunk_after.contrast_limits = self.contrast_limits.value
+            self.chunk_before.contrast_limits = self.contrast_limits.value
+
+    def _update_point_projections(self):
+        self.viewer.dims.margin_left = self.projections
+        self.viewer.dims.margin_right = self.projections
+
+    def _generate_bbox_export(self, idx):
+        ox, oy, oz = self.offset
+        dx, dy, dz = self.offset
+        vertices = self.offset+BOX_PATHS*self._chunk_shape
+        return [[idx, "shape", e, vx, vy, vz] for e, (vx, vy, vz) in enumerate(vertices)]
 
     def generator(self, channel):
         """Generator of chunks and points. Selects random coordinates.
@@ -224,21 +297,32 @@ class PtAnnotator3DWidget(QWidget):
                         for i, (x, y, z) in enumerate(self.csv_points)
                     ]
                 )
-            del napari_viewer.layers[
-                napari_viewer.layers.index(self.img_layer)
-            ]
-            del napari_viewer.layers[
-                napari_viewer.layers.index(self.csv_layer)
-            ]
-            del napari_viewer.layers[
-                napari_viewer.layers.index(self.points_layer)
-            ]
+            with open(self.bboxes_filename, "r+") as fp:
+                recent_chunk = list(fp.readlines())[-1]
+                try:
+                    idx = int(recent_chunk[:recent_chunk.index(",")])+1
+                except:
+                    idx = 0
+                writer = csv.writer(fp, lineterminator="\n")
+                writer.writerows(self._generate_bbox_export(idx))
+            for layer in self.image_layers + [self.csv_layer, self.points_layer]:
+                del napari_viewer.layers[
+                    napari_viewer.layers.index(layer)
+                ]
+        self._chunk_shape = None
         arr, points = next(self.g)
-        self.img_layer = napari_viewer.add_image(arr, name="Chunk")
-        self.img_layer.contrast_limits = self.contrast_limits.value
+        self.img_layer = napari_viewer.add_image(arr, name="Chunk", projection_mode="none")
+        self.chunk_after = napari_viewer.add_image(np.array(list(arr[1:]) + [np.zeros_like(arr[0])]), name="Chunk (+1)", colormap="red", blending="additive", opacity=.5, projection_mode="none")
+        self.chunk_before = napari_viewer.add_image(np.array([np.zeros_like(arr[0])] + list(arr[:-1])), name="Chunk (-1)", colormap="cyan", blending="additive", opacity=.5, projection_mode="none")
+        for layer in self.image_layers:
+            layer.contrast_limits = self.contrast_limits.value
+        link_layers(self.image_layers, ["contrast_limits"])
+        link_layers([self.chunk_after, self.chunk_before], ["visible"])
+        
         self.csv_layer = napari_viewer.add_points(
             points, name=f"From CSV ({len(points)} points)", size=1
         )
         self.points_layer = napari_viewer.add_points(
             [], name="New Points", ndim=3, size=1
         )
+        self._update_point_projections() # force recompute
