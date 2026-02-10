@@ -70,31 +70,31 @@ class PtAnnotator3DWidget(QWidget):
         layout.addWidget(self.csvfile.native)
         layout.addSpacerItem(QSpacerItem(10, 10))
 
-        channel_RoR_layout = QHBoxLayout()
-        channel_RoR_label = QLabel("Channel RoR:")
-        self.channel_RoR = SpinBox(min=0, max=0)
-        self.channel_RoR.native.setSizePolicy(
+        channel_layout = QHBoxLayout()
+        channel_label = QLabel("Channel:")
+        self.channel = SpinBox(min=0, max=0)
+        self.channel.native.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Minimum
         )
-        self.channel_RoR.changed.connect(lambda : setattr(self, "g", self.generator(self.channel_RoR.value, self.channel_CD4.value)))
-        channel_RoR_layout.addWidget(channel_RoR_label)
-        channel_RoR_layout.addWidget(self.channel_RoR.native)
-        layout.addLayout(channel_RoR_layout)
+        self.channel.changed.connect(lambda : setattr(self, "g", self.generator(self.channel.value, self.channel_coloc.value)))
+        channel_layout.addWidget(channel_label)
+        channel_layout.addWidget(self.channel.native)
+        layout.addLayout(channel_layout)
         layout.addSpacerItem(QSpacerItem(10, 10))
 
-        channel_CD4_layout = QHBoxLayout()
-        channel_CD4_label = QLabel("Channel CD4:")
-        self.channel_CD4 = SpinBox(min=0, max=0)
-        self.channel_CD4.native.setSizePolicy(
+        channel_coloc_layout = QHBoxLayout()
+        channel_coloc_label = QLabel("Channel (colocalisation):")
+        self.channel_coloc = SpinBox(min=0, max=0)
+        self.channel_coloc.native.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Minimum
         )
-        self.channel_CD4.changed.connect(lambda : setattr(self, "g", self.generator(self.channel_RoR.value, self.channel_CD4.value)))
-        channel_CD4_layout.addWidget(channel_CD4_label)
-        channel_CD4_layout.addWidget(self.channel_CD4.native)
-        layout.addLayout(channel_CD4_layout)
+        self.channel_coloc.changed.connect(lambda : setattr(self, "g", self.generator(self.channel.value, self.channel_coloc.value)))
+        channel_coloc_layout.addWidget(channel_coloc_label)
+        channel_coloc_layout.addWidget(self.channel_coloc.native)
+        layout.addLayout(channel_coloc_layout)
         layout.addSpacerItem(QSpacerItem(10, 10))
 
-        self.g = self.generator(self.channel_RoR.value, self.channel_CD4.value)
+        self.g = self.generator(self.channel.value, self.channel_coloc.value)
 
         contrast_limits_layout = QHBoxLayout()
         contrast_limits_label = QLabel("Contrast Limits:")
@@ -161,7 +161,7 @@ class PtAnnotator3DWidget(QWidget):
 
         self.viewer.bind_key("Alt-0")(self.confirm)
         self.viewer.bind_key("Alt-1")(self.save_chunk)
-        self.viewer.bind_key("C")(self.toggle_CD4_visibility)
+        self.viewer.bind_key("C")(self.toggle_coloc_visibility)
 
         self.offset = (0, 0, 0)
         self.img_layer = None
@@ -211,8 +211,8 @@ class PtAnnotator3DWidget(QWidget):
             for e, spin in enumerate(self.chunk_spins):
                 spin.max = self.data.shape[e]
         else:
-            self.channel_CD4.max = self.data.shape[0] - 1
-            self.channel_RoR.max = self.data.shape[0] - 1
+            self.channel_coloc.max = self.data.shape[0] - 1
+            self.channel.max = self.data.shape[0] - 1
             for e, spin in enumerate(self.chunk_spins, start=1):
                 spin.max = self.data.shape[e]
 
@@ -255,28 +255,28 @@ class PtAnnotator3DWidget(QWidget):
         vertices = self.offset+BOX_PATHS*self._chunk_shape
         return [[idx, "path", e, vx, vy, vz] for e, (vx, vy, vz) in enumerate(vertices)]
 
-    def toggle_CD4_visibility(self, napari_viewer):
+    def toggle_coloc_visibility(self, napari_viewer):
         if not napari_viewer:
             napari_viewer = self.viewer
         if not hasattr(self, "co_layer") or self.co_layer is None:
             return
         self.co_layer.visible = not self.co_layer.visible
 
-    def generator(self, channel_RoR, channel_CD4):
+    def generator(self, channel, channel_coloc):
         """Generator of chunks and points. Selects random coordinates.
 
         Parameters
         ----------
-        channel_RoR : int
-            Index of channel of the file to slice through (best if RoR).
-        channel_CD4 : int
-            Index of channel of the file to help colocalise (best if CD4).
+        channel : int
+            Index of channel of the file to slice through.
+        channel_coloc : int
+            Index of channel of the file to help colocalise (ignored if same as channel).
 
         Yields
         -------
-        chunk_RoR : numpy.ndarray
+        chunk : numpy.ndarray
             Generated slice of the image's main channel.
-        chunk_CD4 : numpy.ndarray
+        chunk_coloc : numpy.ndarray
             Generated slice of the image's secondary channel.
         points : list
             List of points already saved in the chunk.
@@ -298,18 +298,18 @@ class PtAnnotator3DWidget(QWidget):
                 and (z < pz < z + dz)
             ]
             if self.no_channels:
-                chunk_RoR = np.array(
+                chunk = np.array(
                     self.data[x : x + dx, y : y + dy, z : z + dz]
                 )
-                chunk_CD4 = None
+                chunk_coloc = None
             else:
-                chunk_RoR = np.array(
-                    self.data[channel_RoR, x : x + dx, y : y + dy, z : z + dz]
+                chunk = np.array(
+                    self.data[channel, x : x + dx, y : y + dy, z : z + dz]
                 )
-                chunk_CD4 = np.array(
-                    self.data[channel_CD4, x : x + dx, y : y + dy, z : z + dz]
-                )
-            yield chunk_RoR, chunk_CD4, self.points
+                chunk_coloc = np.array(
+                    self.data[channel_coloc, x : x + dx, y : y + dy, z : z + dz]
+                ) if channel != channel_coloc else None
+            yield chunk, chunk_coloc, self.points
 
     def confirm(self, napari_viewer):
         if not napari_viewer:
@@ -351,7 +351,7 @@ class PtAnnotator3DWidget(QWidget):
                 ]
         self._chunk_shape = None
         arr, co_arr, points = next(self.g)
-        self.img_layer = napari_viewer.add_image(arr, name="Chunk (RoR)", projection_mode="none")
+        self.img_layer = napari_viewer.add_image(arr, name="Chunk )", projection_mode="none")
         if self.co_layer is not None:
             del napari_viewer.layers[
                 napari_viewer.layers.index(self.co_layer)
@@ -364,7 +364,7 @@ class PtAnnotator3DWidget(QWidget):
         link_layers(self.image_layers, ["contrast_limits"])
         link_layers([self.chunk_after, self.chunk_before], ["visible"])
         if co_arr is not None:
-            self.co_layer = napari_viewer.add_image(co_arr, name="Chunk (CD4)", projection_mode="none", colormap="magma", visible=False)
+            self.co_layer = napari_viewer.add_image(co_arr, name="Chunk (coloc)", projection_mode="none", colormap="magma", visible=False)
 
         self.csv_layer = napari_viewer.add_points(
             points, name=f"From CSV ({len(points)} points)", size=1
