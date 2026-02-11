@@ -12,6 +12,7 @@ import numpy as np
 import napari
 from napari.utils.notifications import show_warning
 from napari.layers.utils._link_layers import link_layers
+from napari.qt.threading import thread_worker
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QAbstractSpinBox,
@@ -172,6 +173,7 @@ class PtAnnotator3DWidget(QWidget):
         self.points_layer = None
         self.no_channels = False
         self._chunk_shape = None
+        self.tmp = None
 
     @property
     def image_layers(self):
@@ -190,6 +192,10 @@ class PtAnnotator3DWidget(QWidget):
     @property
     def projections(self):
         return tuple([spin.value for spin in self.proj_spins])
+
+    @property
+    def settings(self):
+        return (self.channel, self.channel_coloc, self.chunk_shape)
 
     def load_csv(self):
         """Loads the csv points list using the FileEdit dialog box."""
@@ -311,6 +317,19 @@ class PtAnnotator3DWidget(QWidget):
                 ) if channel != channel_coloc else None
             yield chunk, chunk_coloc, self.points
 
+
+    @thread_worker(progress=True, start_thread=True)
+    def _prepare_next_batch(self):
+        self.tmp = next(self.g)
+
+    def _prepare_backup(self):
+        if self.points_layer is not None:
+            self.backup = {
+                "points_layer.data":self.points_layer.data,
+                "offset":self.offset,
+                "settings":self.settings
+            }
+
     def confirm(self, napari_viewer):
         if not napari_viewer:
             napari_viewer = self.viewer
@@ -319,44 +338,28 @@ class PtAnnotator3DWidget(QWidget):
                 "Please select an input data file and an output csv file before trying to load chunks."
             )
             return
-        if np.prod(self.chunk_shape) == 0:
+        if np.prod([spin.value for spin in self.chunk_spins]) == 0:
             show_warning("Please select a valid chunk shape.")
             return
+        self._prepare_backup()
         if self.csv_layer in napari_viewer.layers:
-            with open(self.csvfile.value, "w") as fp:
-                writer = csv.writer(fp, lineterminator="\r")
-                ox, oy, oz = self.offset
-                self.csv_points = self.csv_points + [
-                    [np.round(x) + ox, np.round(y) + oy, np.round(z) + oz]
-                    for (x, y, z) in self.points_layer.data
-                ]
-                writer.writerows(
-                    [["index", "axis-0", "axis-1", "axis-2"]]
-                    + [
-                        [i, x, y, z]
-                        for i, (x, y, z) in enumerate(self.csv_points)
-                    ]
-                )
-            with open(self.bboxes_filename, "r+") as fp:
-                recent_chunk = list(fp.readlines())[-1]
-                try:
-                    idx = int(recent_chunk[:recent_chunk.index(",")])+1
-                except:
-                    idx = 0
-                writer = csv.writer(fp, lineterminator="\n")
-                writer.writerows(self._generate_bbox_export(idx))
             for layer in self.image_layers + [self.csv_layer, self.points_layer]:
                 del napari_viewer.layers[
                     napari_viewer.layers.index(layer)
                 ]
+            if self.co_layer is not None:
+                del napari_viewer.layers[
+                    napari_viewer.layers.index(self.co_layer)
+                ]
+                self.co_layer = None
+            self.save_and_update()
         self._chunk_shape = None
-        arr, co_arr, points = next(self.g)
-        self.img_layer = napari_viewer.add_image(arr, name="Chunk )", projection_mode="none")
-        if self.co_layer is not None:
-            del napari_viewer.layers[
-                napari_viewer.layers.index(self.co_layer)
-            ]
-            self.co_layer = None
+        if self.tmp is not None and self.settings == self.backup["settings"]:
+            arr, co_arr, points = self.tmp
+        else:
+            arr, co_arr, points = next(self.g)
+        self.tmp = None
+        self.img_layer = napari_viewer.add_image(arr, name="Chunk", projection_mode="none")
         self.chunk_after = napari_viewer.add_image(np.array(list(arr[1:]) + [np.zeros_like(arr[0])]), name="Chunk (+1)", colormap="red", blending="additive", opacity=.5, projection_mode="none")
         self.chunk_before = napari_viewer.add_image(np.array([np.zeros_like(arr[0])] + list(arr[:-1])), name="Chunk (-1)", colormap="cyan", blending="additive", opacity=.5, projection_mode="none")
         for layer in self.image_layers:
@@ -373,6 +376,32 @@ class PtAnnotator3DWidget(QWidget):
             [], name="New Points", ndim=3, size=1
         )
         self._update_point_projections() # force recompute
+        self._prepare_next_batch()
+
+    @thread_worker(progress=True, start_thread=True)
+    def save_and_update(self):
+        with open(self.csvfile.value, "w") as fp:
+            writer = csv.writer(fp, lineterminator="\r")
+            ox, oy, oz = self.backup["offset"]
+            self.csv_points = self.csv_points + [
+                [np.round(x) + ox, np.round(y) + oy, np.round(z) + oz]
+                for (x, y, z) in self.backup["points_layer.data"]
+            ]
+            writer.writerows(
+                [["index", "axis-0", "axis-1", "axis-2"]]
+                + [
+                    [i, x, y, z]
+                    for i, (x, y, z) in enumerate(self.csv_points)
+                ]
+            )
+        with open(self.bboxes_filename, "r+") as fp:
+            recent_chunk = list(fp.readlines())[-1]
+            try:
+                idx = int(recent_chunk[:recent_chunk.index(",")])+1
+            except:
+                idx = 0
+            writer = csv.writer(fp, lineterminator="\n")
+            writer.writerows(self._generate_bbox_export(idx))
 
     def save_chunk(self, napari_viewer):
         if not napari_viewer:
