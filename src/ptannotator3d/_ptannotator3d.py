@@ -25,6 +25,7 @@ from qtpy.QtWidgets import (
     QLabel,
 )
 from skimage.io import imread, imsave
+from skimage.filters import difference_of_gaussians as dog
 import zarr
 
 VALID_IMAGE_FORMATS = [".tif", ".tiff"]
@@ -321,6 +322,8 @@ class PtAnnotator3DWidget(QWidget):
     @thread_worker(progress=True, start_thread=True)
     def _prepare_next_batch(self):
         self.tmp = next(self.g)
+        while np.max(abs(dog(self.tmp[0].astype(float),1,2))) < 10:
+            self.tmp = next(self.g)
 
     def _prepare_backup(self):
         if self.points_layer is not None:
