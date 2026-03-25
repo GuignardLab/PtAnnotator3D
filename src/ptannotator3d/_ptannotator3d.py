@@ -174,7 +174,6 @@ class PtAnnotator3DWidget(QWidget):
         self.points_layer = None
         self.no_channels = False
         self._chunk_shape = None
-        self.tmp = None
 
     @property
     def image_layers(self):
@@ -319,20 +318,6 @@ class PtAnnotator3DWidget(QWidget):
             yield chunk, chunk_coloc, self.points
 
 
-    @thread_worker(progress=True, start_thread=True)
-    def _prepare_next_batch(self):
-        self.tmp = next(self.g)
-        while np.max(abs(dog(self.tmp[0].astype(float),1,2))) < 10:
-            self.tmp = next(self.g)
-
-    def _prepare_backup(self):
-        if self.points_layer is not None:
-            self.backup = {
-                "points_layer.data":self.points_layer.data,
-                "offset":self.offset,
-                "settings":self.settings
-            }
-
     def confirm(self, napari_viewer):
         if not napari_viewer:
             napari_viewer = self.viewer
@@ -357,11 +342,9 @@ class PtAnnotator3DWidget(QWidget):
                 self.co_layer = None
             self.save_and_update()
         self._chunk_shape = None
-        if self.tmp is not None and self.settings == self.backup["settings"]:
-            arr, co_arr, points = self.tmp
-        else:
+        arr, co_arr, points = next(self.g)
+        while np.max(abs(dog(arr.astype(float),1,2))) < 10:
             arr, co_arr, points = next(self.g)
-        self.tmp = None
         self.img_layer = napari_viewer.add_image(arr, name="Chunk", projection_mode="none")
         self.chunk_after = napari_viewer.add_image(np.array(list(arr[1:]) + [np.zeros_like(arr[0])]), name="Chunk (+1)", colormap="red", blending="additive", opacity=.5, projection_mode="none")
         self.chunk_before = napari_viewer.add_image(np.array([np.zeros_like(arr[0])] + list(arr[:-1])), name="Chunk (-1)", colormap="cyan", blending="additive", opacity=.5, projection_mode="none")
@@ -379,7 +362,14 @@ class PtAnnotator3DWidget(QWidget):
             [], name="New Points", ndim=3, size=1
         )
         self._update_point_projections() # force recompute
-        self._prepare_next_batch()
+
+    def _prepare_backup(self):
+        if self.points_layer is not None:
+            self.backup = {
+                "points_layer.data":self.points_layer.data,
+                "offset":self.offset,
+                "settings":self.settings
+            }
 
     @thread_worker(progress=True, start_thread=True)
     def save_and_update(self):
